@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ブロック崩し</title>
+    <link rel="stylesheet" href="win95_theme.css">
+    <style>
+        /* Specific styles for breakout.html to override/complement win95_theme.css */
+        .window-frame {
+            max-width: 520px; /* Adjusted for canvas width */
+        }
+        canvas {
+            background: #eee;
+            display: block;
+            margin: 0 auto;
+            border: 1px solid #808080; /* Darker border for canvas */
+            box-shadow: inset 1px 1px 0 #000000, inset -1px -1px 0 #FFFFFF;
+        }
+        #gameOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 1.5em;
+            z-index: 10;
+        }
+        #gameOverlay button {
+            background-color: #C0C0C0;
+            border-top: 2px solid #FFFFFF;
+            border-left: 2px solid #FFFFFF;
+            border-right: 2px solid #808080;
+            border-bottom: 2px solid #808080;
+            box-shadow: 1px 1px 0 #000000;
+            color: #000000;
+            padding: 10px 20px;
+            font-size: 1em;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        #gameOverlay button:active {
+            border-top: 2px solid #808080;
+            border-left: 2px solid #808080;
+            border-right: 2px solid #FFFFFF;
+            border-bottom: 2px solid #FFFFFF;
+            box-shadow: inset 1px 1px 0 #000000;
+            padding: 11px 19px 9px 21px; /* Adjust padding for pressed effect */
+        }
+        #levelDisplay {
+            font-size: 1em;
+            color: #000000;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="window-frame">
+        <div class="window-title-bar">
+            <span>ブロック崩し</span>
+            <button>_</button>
+            <button>X</button>
+        </div>
+        <div class="window-content">
+            <div id="levelDisplay">Level: 1</div>
+            <canvas id="breakoutCanvas" width="480" height="320"></canvas>
+            <div id="gameOverlay" style="display: none;">
+                <span id="overlayMessage">クリックで開始</span>
+                <button id="startButton">ゲーム開始</button>
+            </div>
+            <button class="control-button" id="pauseButton">一時停止</button>
+            <button class="back-button" onclick="location.href='index.html'">メニューに戻る</button>
+        </div>
+    </div>
+
+    <!-- Modal Dialog HTML -->
+    <div id="gameModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-title-bar">
+                <span>メッセージ</span>
+            </div>
+            <div class="modal-content">
+                <p id="modalMessage"></p>
+                <button id="modalButton">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("breakoutCanvas");
+        const ctx = canvas.getContext("2d");
+        const gameOverlay = document.getElementById("gameOverlay");
+        const overlayMessage = document.getElementById("overlayMessage");
+        const startButton = document.getElementById("startButton");
+        const pauseButton = document.getElementById("pauseButton");
+        const levelDisplay = document.getElementById("levelDisplay");
+
+        // Modal elements
+        const gameModal = document.getElementById("gameModal");
+        const modalMessage = document.getElementById("modalMessage");
+        const modalButton = document.getElementById("modalButton");
+
+        let x = canvas.width / 2;
+        let y = canvas.height - 30;
+        let dx = 2;
+        let dy = -2;
+        const ballRadius = 10;
+        const initialBallSpeed = 2;
+
+        const paddleHeight = 10;
+        let paddleWidth = 75; 
+        const initialPaddleWidth = 75;
+        let paddleX = (canvas.width - paddleWidth) / 2;
+
+        let rightPressed = false;
+        let leftPressed = false;
+
+        const brickWidth = 75;
+        const brickHeight = 20;
+        const brickPadding = 10;
+        const brickOffsetTop = 30;
+        const brickOffsetLeft = 30;
+
+        let score = 0;
+        let lives = 3;
+        let currentLevel = 0;
+
+        // Block types:
+        // 0: Empty
+        // 1: Normal (1 hit)
+        // 2: Hard (2 hits)
+        // 3: Explosive (destroys adjacent blocks)
+        // 4: Life (gives 1 life)
+        // 5: Speed Up (increases ball speed)
+        // 6: Paddle Shrink (shrinks paddle)
+        const levels = [
+            // Level 1: Basic blocks
+            [
+                [{ type: 1, hits: 1 }, { type: 1, hits: 1 }, { type: 1, hits: 1 }, { type: 1, hits: 1 }, { type: 1, hits: 1 }],
+                [{ type: 1, hits: 1 }, { type: 1, hits: 1 }, { type: 1, hits: 1 }, { type: 1, hits: 1 }, { type: 1, hits: 1 }],
+                [{ type: 1, hits: 1 }, { type: 1, hits: 1 }, { type: 1, hits: 1 }, { type: 1, hits: 1 }, { type: 1, hits: 1 }]
+            ],
+            // Level 2: Hard blocks, some special blocks
+            [
+                [{ type: 2, hits: 2 }, { type: 1, hits: 1 }, { type: 5, hits: 1 }, { type: 2, hits: 2 }, { type: 1, hits: 1 }],
+                [{ type: 3, hits: 1 }, { type: 4, hits: 1 }, { type: 1, hits: 1 }, { type: 6, hits: 1 }, { type: 3, hits: 1 }],
+                [{ type: 1, hits: 1 }, { type: 2, hits: 2 }, { type: 1, hits: 1 }, { type: 2, hits: 2 }, { type: 1, hits: 1 }]
+            ],
+            // Level 3: More challenging mix
+            [
+                [{ type: 2, hits: 2 }, { type: 3, hits: 1 }, { type: 2, hits: 2 }, { type: 3, hits: 1 }, { type: 2, hits: 2 }],
+                [{ type: 5, hits: 1 }, { type: 1, hits: 1 }, { type: 4, hits: 1 }, { type: 1, hits: 1 }, { type: 6, hits: 1 }],
+                [{ type: 1, hits: 1 }, { type: 2, hits: 2 }, { type: 1, hits: 1 }, { type: 2, hits: 2 }, { type: 1, hits: 1 }]
+            ],
+            // Level 4: Empty spaces and more hard blocks
+            [
+                [{ type: 0, hits: 0 }, { type: 2, hits: 2 }, { type: 0, hits: 0 }, { type: 2, hits: 2 }, { type: 0, hits: 0 }],
+                [{ type: 2, hits: 2 }, { type: 0, hits: 0 }, { type: 1, hits: 1 }, { type: 0, hits: 0 }, { type: 2, hits: 2 }],
+                [{ type: 0, hits: 0 }, { type: 2, hits: 2 }, { type: 0, hits: 0 }, { type: 2, hits: 2 }, { type: 0, hits: 0 }]
+            ]
+        ];
+
+        let bricks = [];
+        let gameRunning = false;
+        let animationFrameId;
+
+        document.addEventListener("keydown", keyDownHandler, false);
+        document.addEventListener("keyup", keyUpHandler, false);
+        document.addEventListener("mousemove", mouseMoveHandler, false);
+        startButton.addEventListener("click", startGame);
+        pauseButton.addEventListener("click", togglePause);
+
+        // Modal functions
+        function showModal(message, buttonText, callback) {
+            modalMessage.textContent = message;
+            modalButton.textContent = buttonText;
+            modalButton.onclick = () => {
+                gameModal.classList.remove("visible");
+                if (callback) callback();
+            };
+            gameModal.classList.add("visible");
+        }
+
+        function initBricks() {
+            bricks = [];
+            const levelData = levels[currentLevel];
+            // Initialize bricks array with correct dimensions (rows then columns)
+            for (let r = 0; r < levelData.length; r++) {
+                bricks[r] = [];
+                for (let c = 0; c < levelData[r].length; c++) {
+                    bricks[r][c] = { ...levelData[r][c], x: 0, y: 0 };
+                }
+            }
+        }
+
+        function keyDownHandler(e) {
+            if (e.key === "Right" || e.key === "ArrowRight") {
+                rightPressed = true;
+            } else if (e.key === "Left" || e.key === "ArrowLeft") {
+                leftPressed = true;
+            }
+        }
+
+        function keyUpHandler(e) {
+            if (e.key === "Right" || e.key === "ArrowRight") {
+                rightPressed = false;
+            } else if (e.key === "Left" || e.key === "ArrowLeft") {
+                leftPressed = false;
+            }
+        }
+
+        function mouseMoveHandler(e) {
+            const relativeX = e.clientX - canvas.offsetLeft;
+            if (relativeX > 0 && relativeX < canvas.width) {
+                paddleX = relativeX - paddleWidth / 2;
+            }
+        }
+
+        function collisionDetection() {
+            for (let r = 0; r < bricks.length; r++) { 
+                for (let c = 0; c < bricks[r].length; c++) { 
+                    const b = bricks[r][c];
+                    if (b.hits > 0) { 
+                        const brickX = c * (brickWidth + brickPadding) + brickOffsetLeft;
+                        const brickY = r * (brickHeight + brickPadding) + brickOffsetTop;
+                        b.x = brickX;
+                        b.y = brickY;
+
+                        if (
+                            x > b.x &&
+                            x < b.x + brickWidth &&
+                            y > b.y &&
+                            y < b.y + brickHeight
+                        ) {
+                            dy = -dy;
+                            b.hits--; 
+                            score++;
+
+                            if (b.type === 3) { 
+                                for (let dc = -1; dc <= 1; dc++) {
+                                    for (let dr = -1; dr <= 1; dr++) {
+                                        if (dc === 0 && dr === 0) continue;
+                                        const nc = c + dc;
+                                        const nr = r + dr;
+                                        if (nr >= 0 && nr < bricks.length && nc >= 0 && nc < bricks[nr].length && bricks[nr][nc].hits > 0) {
+                                            bricks[nr][nc].hits = 0; 
+                                            score++; 
+                                        }
+                                    }
+                                }
+                            } else if (b.type === 4) { 
+                                lives++;
+                            } else if (b.type === 5) { 
+                                dx *= 1.2;
+                                dy *= 1.2;
+                            } else if (b.type === 6) { 
+                                paddleWidth = Math.max(20, paddleWidth - 15);
+                            }
+
+                            if (b.hits === 0) {
+                                checkLevelComplete();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        function checkLevelComplete() {
+            let allBricksDestroyed = true;
+            for (let r = 0; r < bricks.length; r++) {
+                for (let c = 0; c < bricks[r].length; c++) {
+                    if (bricks[r][c].type !== 0 && bricks[r][c].hits > 0) { 
+                        allBricksDestroyed = false;
+                        break;
+                    }
+                }
+                if (!allBricksDestroyed) break;
+            }
+
+            if (allBricksDestroyed) {
+                currentLevel++;
+                if (currentLevel < levels.length) {
+                    initBricks();
+                    resetBallAndPaddle();
+                    overlayMessage.textContent = `レベル ${currentLevel + 1} クリア！次のレベルへ`;
+                    startButton.textContent = "次のレベルへ";
+                    gameOverlay.style.display = "flex";
+                    gameRunning = false;
+                    cancelAnimationFrame(animationFrameId);
+                } else {
+                    gameOver(true);
+                }
+            }
+        }
+
+        function drawBall() {
+            ctx.beginPath();
+            ctx.arc(x, y, ballRadius, 0, Math.PI * 2);
+            ctx.fillStyle = "#0095DD";
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        function drawPaddle() {
+            ctx.beginPath();
+            ctx.rect(paddleX, canvas.height - paddleHeight, paddleWidth, paddleHeight);
+            ctx.fillStyle = "#0095DD";
+            ctx.fill();
+            ctx.closePath();
+        }
+
+        function drawBricks() {
+            for (let r = 0; r < bricks.length; r++) { 
+                for (let c = 0; c < bricks[r].length; c++) { 
+                    const b = bricks[r][c];
+                    if (b.hits > 0) {
+                        const brickX = c * (brickWidth + brickPadding) + brickOffsetLeft;
+                        const brickY = r * (brickHeight + brickPadding) + brickOffsetTop;
+                        b.x = brickX;
+                        b.y = brickY;
+                        ctx.beginPath();
+                        ctx.rect(brickX, brickY, brickWidth, brickHeight);
+                        
+                        if (b.type === 1) {
+                            ctx.fillStyle = "#0095DD"; 
+                        } else if (b.type === 2) {
+                            ctx.fillStyle = b.hits === 2 ? "#FF8C00" : "#FFA500"; 
+                        } else if (b.type === 3) {
+                            ctx.fillStyle = "#DC143C"; 
+                        } else if (b.type === 4) {
+                            ctx.fillStyle = "#FF69B4"; 
+                        } else if (b.type === 5) {
+                            ctx.fillStyle = "#00FF00"; 
+                        } else if (b.type === 6) {
+                            ctx.fillStyle = "#800080"; 
+                        }
+                        ctx.fill();
+                        ctx.closePath();
+
+                        ctx.fillStyle = "white";
+                        ctx.font = "14px Arial";
+                        ctx.textAlign = "center";
+                        if (b.type === 3) {
+                            ctx.fillText("💣", brickX + brickWidth / 2, brickY + brickHeight / 2 + 5);
+                        } else if (b.type === 4) {
+                            ctx.fillText("❤️", brickX + brickWidth / 2, brickY + brickHeight / 2 + 5);
+                        } else if (b.type === 5) {
+                            ctx.fillText("⚡", brickX + brickWidth / 2, brickY + brickHeight / 2 + 5);
+                        } else if (b.type === 6) {
+                            ctx.fillText("↔️", brickX + brickWidth / 2, brickY + brickHeight / 2 + 5);
+                        }
+                    }
+                }
+            }
+        }
+
+        function drawScore() {
+            ctx.font = "16px Arial";
+            ctx.fillStyle = "#0095DD";
+            ctx.fillText(`Score: ${score}`, 8, 20);
+        }
+
+        function drawLives() {
+            ctx.font = "16px Arial";
+            ctx.fillStyle = "#0095DD";
+            ctx.fillText(`Lives: ${lives}`, canvas.width - 65, 20);
+        }
+
+        function draw() {
+            if (!gameRunning) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawBricks();
+            drawBall();
+            drawPaddle();
+            drawScore();
+            drawLives();
+            collisionDetection();
+
+            if (x + dx > canvas.width - ballRadius || x + dx < ballRadius) {
+                dx = -dx;
+            }
+            if (y + dy < ballRadius) {
+                dy = -dy;
+            } else if (y + dy > canvas.height - ballRadius) {
+                if (x > paddleX && x < paddleX + paddleWidth) {
+                    dy = -dy;
+                } else {
+                    lives = Math.max(0, lives - 1); 
+                    if (lives === 0) {
+                        gameOver(false);
+                    } else {
+                        resetBallAndPaddle();
+                    }
+                }
+            }
+
+            if (rightPressed && paddleX < canvas.width - paddleWidth) {
+                paddleX += 7;
+            } else if (leftPressed && paddleX > 0) {
+                paddleX -= 7;
+            }
+
+            x += dx;
+            y += dy;
+
+            animationFrameId = requestAnimationFrame(draw);
+        }
+
+        function resetBallAndPaddle() {
+            x = canvas.width / 2;
+            y = canvas.height - 30;
+            dx = initialBallSpeed * Math.sign(dx || 1); 
+            dy = -initialBallSpeed;
+            paddleX = (canvas.width - paddleWidth) / 2;
+            paddleWidth = initialPaddleWidth; 
+        }
+
+        function startGame() {
+            gameOverlay.style.display = "none";
+            gameRunning = true;
+            if (currentLevel === 0 && score === 0) { 
+                resetGame();
+            } else if (currentLevel > 0 && !gameRunning) { 
+                initBricks(); 
+                resetBallAndPaddle();
+            }
+            levelDisplay.textContent = `Level: ${currentLevel + 1}`;
+            draw();
+        }
+
+        function togglePause() {
+            if (gameRunning) {
+                gameRunning = false;
+                cancelAnimationFrame(animationFrameId);
+                overlayMessage.textContent = "一時停止中";
+                startButton.textContent = "再開";
+                gameOverlay.style.display = "flex";
+            } else {
+                startGame();
+            }
+        }
+
+        function gameOver(win) {
+            gameRunning = false;
+            cancelAnimationFrame(animationFrameId);
+            let message;
+            if (win) {
+                message = "全レベルクリア！おめでとう！";
+            } else {
+                message = "ゲームオーバー！";
+            }
+            showModal(message, "もう一度プレイ", () => {
+                currentLevel = 0; 
+                resetGame();
+                gameOverlay.style.display = "flex";
+                overlayMessage.textContent = "クリックで開始";
+                startButton.textContent = "ゲーム開始";
+            });
+        }
+
+        function resetGame() {
+            currentLevel = 0;
+            score = 0;
+            lives = 3;
+            paddleWidth = initialPaddleWidth; 
+            initBricks();
+            resetBallAndPaddle();
+            draw(); 
+        }
+
+        gameOverlay.style.display = "flex";
+        overlayMessage.textContent = "クリックで開始";
+        startButton.textContent = "ゲーム開始";
+
+    </script>
+</body>
+</html>

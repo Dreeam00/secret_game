@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ミニゲーム集</title>
+    <link rel="stylesheet" href="win95_theme.css">
+    <style>
+        /* Specific styles for index.html to override/complement win95_theme.css */
+        .window-frame {
+            max-width: 900px; /* Override for index.html */
+        }
+        .game-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            width: 100%;
+        }
+        .game-item {
+            background-color: #C0C0C0; /* Win95 grey */
+            border-top: 2px solid #FFFFFF;
+            border-left: 2px solid #FFFFFF;
+            border-right: 2px solid #808080;
+            border-bottom: 2px solid #808080;
+            box-shadow: 1px 1px 0 #000000;
+            overflow: hidden;
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .game-item:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        .game-item a {
+            text-decoration: none;
+            color: #000080; /* Win95 blue */
+            font-weight: bold;
+            padding: 20px;
+            display: block;
+            font-size: 1.2em;
+        }
+        .game-item a:active {
+            border-top: 2px solid #808080;
+            border-left: 2px solid #808080;
+            border-right: 2px solid #FFFFFF;
+            border-bottom: 2px solid #FFFFFF;
+            box-shadow: inset 1px 1px 0 #000000;
+            padding: 21px 19px 19px 21px; /* Adjust padding for pressed effect */
+        }
+    </style>
+</head>
+<body>
+    <div class="window-frame">
+        <div class="window-title-bar">
+            <span>ミニゲーム集</span>
+            <button>_</button>
+            <button>X</button>
+        </div>
+        <div class="window-content">
+            <h1>ミニゲーム集</h1>
+            <div class="game-list">
+                <div class="game-item"><a href="breakout.html">ブロック崩し</a></div>
+                <div class="game-item"><a href="tic_tac_toe.html">三目並べ</a></div>
+                <div class="game-item"><a href="minesweeper.html">マインスイーパ</a></div>
+                <div class="game-item"><a href="pacman.html">パックマン</a></div>
+                <div class="game-item"><a href="solitaire.html">ソリティア</a></div>
+                <div class="game-item"><a href="memory_game.html">記憶力ゲーム</a></div>
+                <div class="game-item"><a href="snake_game.html">ヘビゲーム</a></div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

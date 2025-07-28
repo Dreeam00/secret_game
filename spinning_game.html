@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>コマを回すゲーム</title>
+    <link rel="stylesheet" href="win95_theme.css">
+    <style>
+        /* Specific styles for spinning_game.html to override/complement win95_theme.css */
+        .window-frame {
+            max-width: 600px; /* Adjusted for content */
+        }
+        .game-container {
+            padding: 0; /* Remove padding as window-content has it */
+            box-shadow: none; /* Remove box-shadow as window-frame has it */
+            background-color: transparent; /* Remove background as window-content has it */
+        }
+    </style>
+</head>
+<body>
+    <div class="window-frame">
+        <div class="window-title-bar">
+            <span>コマを回すゲーム</span>
+            <button>_</button>
+            <button>X</button>
+        </div>
+        <div class="window-content">
+            <div class="game-container">
+                <h1>コマを回すゲーム</h1>
+                <p>このゲームは現在開発中です。</p>
+                <p>どのような「コマを回す」ゲームをご希望か、詳細をお聞かせください。</p>
+                <p>例: ベイブレードのようなバトル、ルーレット、物理シミュレーションなど。</p>
+            </div>
+            <button class="back-button" onclick="location.href='index.html'">メニューに戻る</button>
+        </div>
+    </div>
+</body>
+</html>

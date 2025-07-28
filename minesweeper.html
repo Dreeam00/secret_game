@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>マインスイーパ</title>
+    <link rel="stylesheet" href="win95_theme.css">
+    <style>
+        /* Specific styles for minesweeper.html to override/complement win95_theme.css */
+        .window-frame {
+            max-width: fit-content; /* Adjust to content */
+        }
+        .game-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 5px;
+            border: 2px inset #808080;
+            background-color: #C0C0C0;
+        }
+        .game-header div {
+            font-size: 1.2em;
+            font-weight: bold;
+            padding: 0 5px;
+            background-color: #000000;
+            color: #FF0000; /* Red for numbers */
+            border: 2px inset #808080;
+        }
+        #faceButton {
+            font-size: 1.8em;
+            background-color: #C0C0C0;
+            border-top: 2px solid #FFFFFF;
+            border-left: 2px solid #FFFFFF;
+            border-right: 2px solid #808080;
+            border-bottom: 2px solid #808080;
+            box-shadow: 1px 1px 0 #000000;
+            cursor: pointer;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #faceButton:active {
+            border-top: 2px solid #808080;
+            border-left: 2px solid #808080;
+            border-right: 2px solid #FFFFFF;
+            border-bottom: 2px solid #FFFFFF;
+            box-shadow: inset 1px 1px 0 #000000;
+        }
+        #minesweeper-board {
+            display: grid;
+            border: 2px solid #808080;
+            margin: 0 auto;
+            background-color: #C0C0C0;
+        }
+        .cell {
+            width: 30px;
+            height: 30px;
+            border-top: 2px solid #FFFFFF;
+            border-left: 2px solid #FFFFFF;
+            border-right: 2px solid #808080;
+            border-bottom: 2px solid #808080;
+            background-color: #C0C0C0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            font-size: 1.2em;
+            cursor: pointer;
+            user-select: none;
+        }
+        .cell.revealed {
+            background-color: #D0D0D0;
+            border: 1px solid #808080;
+            cursor: default;
+        }
+        .cell.mine {
+            background-color: #D0D0D0;
+            border: 1px solid #808080;
+        }
+        .cell.flagged {
+            background-color: #C0C0C0;
+            border-top: 2px solid #FFFFFF;
+            border-left: 2px solid #FFFFFF;
+            border-right: 2px solid #808080;
+            border-bottom: 2px solid #808080;
+        }
+        .cell.num1 { color: blue; }
+        .cell.num2 { color: green; }
+        .cell.num3 { color: red; }
+        .cell.num4 { color: darkblue; }
+        .cell.num5 { color: darkred; }
+        .cell.num6 { color: teal; }
+        .cell.num7 { color: black; }
+        .cell.num8 { color: gray; }
+        .cell.wrong-flag {
+            background-color: #ff0000;
+            color: white;
+        }
+
+        #status {
+            margin-top: 10px;
+            font-size: 1em;
+            color: #000000;
+        }
+        #difficultySelect {
+            background-color: #C0C0C0;
+            border-top: 2px solid #808080;
+            border-left: 2px solid #808080;
+            border-right: 2px solid #FFFFFF;
+            border-bottom: 2px solid #FFFFFF;
+            color: #000000;
+            padding: 5px;
+            font-size: 1em;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="window-frame">
+        <div class="window-title-bar">
+            <span>マインスイーパ</span>
+            <button>_</button>
+            <button>X</button>
+        </div>
+        <div class="window-content">
+            <div class="game-header">
+                <div id="mineCountDisplay"></div>
+                <button id="faceButton">🙂</button>
+                <div id="timerDisplay">000</div>
+            </div>
+            <div id="minesweeper-board"></div>
+            <div id="status"></div>
+            <div class="controls">
+                <select id="difficultySelect">
+                    <option value="beginner">初級 (9x9, 10地雷)</option>
+                    <option value="intermediate">中級 (16x16, 40地雷)</option>
+                    <option value="expert">上級 (16x30, 99地雷)</option>
+                </select>
+                <button class="reset-button" id="resetButton">新しいゲーム</button>
+                <button class="back-button" onclick="location.href='index.html'">メニューに戻る</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Dialog HTML -->
+    <div id="gameModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-title-bar">
+                <span>メッセージ</span>
+            </div>
+            <div class="modal-content">
+                <p id="modalMessage"></p>
+                <button id="modalButton">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const boardElement = document.getElementById('minesweeper-board');
+        const statusDisplay = document.getElementById('status');
+        const resetButton = document.getElementById('resetButton');
+        const faceButton = document.getElementById('faceButton');
+        const mineCountDisplay = document.getElementById('mineCountDisplay');
+        const timerDisplay = document.getElementById('timerDisplay');
+        const difficultySelect = document.getElementById('difficultySelect');
+
+        // Modal elements
+        const gameModal = document.getElementById("gameModal");
+        const modalMessage = document.getElementById("modalMessage");
+        const modalButton = document.getElementById("modalButton");
+
+        let ROWS = 9;
+        let COLS = 9;
+        let MINES = 10;
+        let board = [];
+        let gameEnded = false;
+        let minesFlagged = 0;
+        let timer = 0;
+        let timerInterval;
+        let firstClick = true;
+
+        const difficulties = {
+            beginner: { rows: 9, cols: 9, mines: 10 },
+            intermediate: { rows: 16, cols: 16, mines: 40 },
+            expert: { rows: 16, cols: 30, mines: 99 }
+        };
+
+        // Modal functions
+        function showModal(message, buttonText, callback) {
+            modalMessage.textContent = message;
+            modalButton.textContent = buttonText;
+            modalButton.onclick = () => {
+                gameModal.classList.remove("visible");
+                if (callback) callback();
+            };
+            gameModal.classList.add("visible");
+        }
+
+        function initGame() {
+            const selectedDifficulty = difficulties[difficultySelect.value];
+            ROWS = selectedDifficulty.rows;
+            COLS = selectedDifficulty.cols;
+            MINES = selectedDifficulty.mines;
+
+            boardElement.innerHTML = '';
+            boardElement.style.gridTemplateColumns = `repeat(${COLS}, 30px)`;
+            board = [];
+            gameEnded = false;
+            minesFlagged = 0;
+            timer = 0;
+            firstClick = true;
+            clearInterval(timerInterval);
+            timerDisplay.textContent = '000';
+            mineCountDisplay.textContent = String(MINES).padStart(3, '0');
+            statusDisplay.textContent = 'ゲーム開始！';
+            faceButton.textContent = '🙂';
+
+            // Initialize board with empty cells
+            for (let r = 0; r < ROWS; r++) {
+                board[r] = [];
+                for (let c = 0; c < COLS; c++) {
+                    board[r][c] = {
+                        isMine: false,
+                        isRevealed: false,
+                        isFlagged: false,
+                        mineCount: 0,
+                        element: null
+                    };
+                }
+            }
+            renderBoard();
+        }
+
+        function placeMines(initialR, initialC) {
+            let minesPlaced = 0;
+            while (minesPlaced < MINES) {
+                const r = Math.floor(Math.random() * ROWS);
+                const c = Math.floor(Math.random() * COLS);
+                // Ensure mine is not placed on first click or adjacent to it
+                if (!board[r][c].isMine && !(Math.abs(r - initialR) <= 1 && Math.abs(c - initialC) <= 1)) {
+                    board[r][c].isMine = true;
+                    minesPlaced++;
+                }
+            }
+        }
+
+        function calculateMineCounts() {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (!board[r][c].isMine) {
+                        let count = 0;
+                        for (let dr = -1; dr <= 1; dr++) {
+                            for (let dc = -1; dc <= 1; dc++) {
+                                if (dr === 0 && dc === 0) continue;
+                                const nr = r + dr;
+                                const nc = c + dc;
+                                if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS && board[nr][nc].isMine) {
+                                    count++;
+                                }
+                            }
+                        }
+                        board[r][c].mineCount = count;
+                    }
+                }
+            }
+        }
+
+        function renderBoard() {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.row = r;
+                    cell.dataset.col = c;
+                    cell.addEventListener('click', handleCellClick);
+                    cell.addEventListener('contextmenu', handleCellRightClick);
+                    board[r][c].element = cell;
+                    boardElement.appendChild(cell);
+                }
+            }
+        }
+
+        function revealCell(r, c) {
+            if (r < 0 || r >= ROWS || c < 0 || c >= COLS || board[r][c].isRevealed || board[r][c].isFlagged || gameEnded) {
+                return;
+            }
+
+            board[r][c].isRevealed = true;
+            const cellElement = board[r][c].element;
+            cellElement.classList.add('revealed');
+
+            if (board[r][c].isMine) {
+                cellElement.classList.add('mine');
+                cellElement.textContent = '💣';
+                gameOver(false);
+                return;
+            }
+
+            if (board[r][c].mineCount > 0) {
+                cellElement.textContent = board[r][c].mineCount;
+                cellElement.classList.add(`num${board[r][c].mineCount}`);
+            } else {
+                // Reveal adjacent cells if no mines around
+                for (let dr = -1; dr <= 1; dr++) {
+                    for (let dc = -1; dc <= 1; dc++) {
+                        revealCell(r + dr, c + dc);
+                    }
+                }
+            }
+            checkWin();
+        }
+
+        function handleCellClick(event) {
+            const r = parseInt(event.target.dataset.row);
+            const c = parseInt(event.target.dataset.col);
+
+            if (firstClick) {
+                placeMines(r, c);
+                calculateMineCounts();
+                timerInterval = setInterval(updateTimer, 1000);
+                firstClick = false;
+            }
+            revealCell(r, c);
+        }
+
+        function handleCellRightClick(event) {
+            event.preventDefault();
+            const r = parseInt(event.target.dataset.row);
+            const c = parseInt(event.target.dataset.col);
+            if (gameEnded || board[r][c].isRevealed) return;
+
+            const cell = board[r][c];
+            const cellElement = cell.element;
+
+            if (cell.isFlagged) {
+                cell.isFlagged = false;
+                cellElement.classList.remove('flagged');
+                cellElement.textContent = '';
+                minesFlagged--;
+            } else if (minesFlagged < MINES) {
+                cell.isFlagged = true;
+                cellElement.classList.add('flagged');
+                cellElement.textContent = '🚩';
+                minesFlagged++;
+            }
+            mineCountDisplay.textContent = String(MINES - minesFlagged).padStart(3, '0');
+            checkWin();
+        }
+
+        function checkWin() {
+            let revealedCount = 0;
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (board[r][c].isRevealed && !board[r][c].isMine) {
+                        revealedCount++;
+                    }
+                }
+            }
+
+            if (revealedCount === (ROWS * COLS) - MINES) {
+                gameOver(true);
+            }
+        }
+
+        function gameOver(win) {
+            gameEnded = true;
+            clearInterval(timerInterval);
+            let message;
+            if (win) {
+                message = 'ゲームクリア！🎉';
+                faceButton.textContent = '😎';
+            } else {
+                message = 'ゲームオーバー！💥';
+                faceButton.textContent = '😵';
+                revealAllMines();
+            }
+            showModal(message, "OK", initGame);
+        }
+
+        function revealAllMines() {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (board[r][c].isMine && !board[r][c].isFlagged) {
+                        board[r][c].element.classList.add('mine');
+                        board[r][c].element.textContent = '💣';
+                    } else if (!board[r][c].isMine && board[r][c].isFlagged) {
+                        // Show incorrectly placed flags
+                        board[r][c].element.classList.add('wrong-flag');
+                        board[r][c].element.textContent = '❌';
+                    }
+                }
+            }
+        }
+
+        function updateTimer() {
+            timer++;
+            timerDisplay.textContent = String(timer).padStart(3, '0');
+        }
+
+        resetButton.addEventListener('click', initGame);
+        faceButton.addEventListener('click', initGame);
+        difficultySelect.addEventListener('change', initGame);
+
+        initGame();
+    </script>
+</body>
+</html>

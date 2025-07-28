@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>パックマン</title>
+    <link rel="stylesheet" href="win95_theme.css">
+    <style>
+        /* Specific styles for pacman.html to override/complement win95_theme.css */
+        .window-frame {
+            max-width: 460px; /* Adjusted for canvas width */
+        }
+        canvas {
+            background: black;
+            display: block;
+            margin: 0 auto;
+            border: 1px solid #808080; /* Darker border for canvas */
+            box-shadow: inset 1px 1px 0 #000000, inset -1px -1px 0 #FFFFFF;
+        }
+    </style>
+</head>
+<body>
+    <div class="window-frame">
+        <div class="window-title-bar">
+            <span>パックマン</span>
+            <button>_</button>
+            <button>X</button>
+        </div>
+        <div class="window-content">
+            <h1>パックマン</h1>
+            <canvas id="pacmanCanvas" width="420" height="420"></canvas>
+            <button class="back-button" onclick="location.href='index.html'">メニューに戻る</button>
+        </div>
+    </div>
+
+    <!-- Modal Dialog HTML -->
+    <div id="gameModal" class="modal-overlay">
+        <div class="modal-box">
+            <div class="modal-title-bar">
+                <span>メッセージ</span>
+            </div>
+            <div class="modal-content">
+                <p id="modalMessage"></p>
+                <button id="modalButton">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("pacmanCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // Modal elements
+        const gameModal = document.getElementById("gameModal");
+        const modalMessage = document.getElementById("modalMessage");
+        const modalButton = document.getElementById("modalButton");
+
+        const TILE_SIZE = 20;
+        const GRID_WIDTH = canvas.width / TILE_SIZE;
+        const GRID_HEIGHT = canvas.height / TILE_SIZE;
+
+        // Maze cell types:
+        // 0: Wall
+        // 1: Path
+        // 2: Pellet
+        // 3: Power Pellet
+        // 4: Ghost House (special path)
+        let maze = [];
+
+        let pacman = {
+            x: 0,
+            y: 0,
+            radius: TILE_SIZE / 2 - 2,
+            mouthOpen: 0.2,
+            mouthDirection: 1,
+            angle: 0,
+            dx: 0,
+            dy: 0,
+            speed: 2
+        };
+
+        class Ghost {
+            constructor(x, y, color, targetStrategy) {
+                this.initialX = x;
+                this.initialY = y;
+                this.x = x;
+                this.y = y;
+                this.color = color;
+                this.dx = 0;
+                this.dy = 0;
+                this.speed = 1;
+                this.targetStrategy = targetStrategy;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x + TILE_SIZE / 2, this.y + TILE_SIZE / 2, TILE_SIZE / 2 - 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.closePath();
+            }
+
+            update() {
+                const currentGridX = Math.floor((this.x + TILE_SIZE / 2) / TILE_SIZE);
+                const currentGridY = Math.floor((this.y + TILE_SIZE / 2) / TILE_SIZE);
+
+                const target = this.targetStrategy(pacman, this, maze, TILE_SIZE);
+                const targetGridX = Math.floor(target.x / TILE_SIZE);
+                const targetGridY = Math.floor(target.y / TILE_SIZE);
+
+                // BFS to find the next move
+                const path = bfs(maze, currentGridX, currentGridY, targetGridX, targetGridY);
+
+                if (path && path.length > 1) {
+                    const nextStep = path[1]; // The next tile to move to
+                    this.dx = nextStep.x - currentGridX;
+                    this.dy = nextStep.y - currentGridY;
+                } else {
+                    // If no path or at target, try to move randomly or stay still
+                    let possibleMoves = [];
+                    const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]]; // Down, Up, Right, Left
+                    for (const dir of directions) {
+                        const nextX = currentGridX + dir[0];
+                        const nextY = currentGridY + dir[1];
+                        if (nextY >= 0 && nextY < GRID_HEIGHT && nextX >= 0 && nextX < GRID_WIDTH && maze[nextY][nextX] !== 0) {
+                            possibleMoves.push({ dx: dir[0], dy: dir[1] });
+                        }
+                    }
+                    if (possibleMoves.length > 0) {
+                        const randomMove = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+                        this.dx = randomMove.dx;
+                        this.dy = randomMove.dy;
+                    } else {
+                        this.dx = 0;
+                        this.dy = 0;
+                    }
+                }
+
+                const nextX = this.x + this.dx * this.speed;
+                const nextY = this.y + this.dy * this.speed;
+
+                const nextGridX = Math.floor((nextX + TILE_SIZE / 2) / TILE_SIZE);
+                const nextGridY = Math.floor((nextY + TILE_SIZE / 2) / TILE_SIZE);
+
+                if (nextGridY >= 0 && nextGridY < GRID_HEIGHT && nextGridX >= 0 && nextGridX < GRID_WIDTH && maze[nextGridY][nextGridX] === 0) {
+                    this.dx = 0;
+                    this.dy = 0;
+                } else {
+                    this.x = nextX;
+                    this.y = nextY;
+                }
+
+                const dist = Math.sqrt(Math.pow(pacman.x - this.x, 2) + Math.pow(pacman.y - this.y, 2));
+                if (dist < TILE_SIZE) {
+                    gameOver();
+                }
+            }
+        }
+
+        // BFS implementation for pathfinding
+        function bfs(grid, startX, startY, targetX, targetY) {
+            const queue = [];
+            const visited = Array(GRID_HEIGHT).fill(0).map(() => Array(GRID_WIDTH).fill(false));
+            const parent = Array(GRID_HEIGHT).fill(0).map(() => Array(GRID_WIDTH).fill(null));
+
+            queue.push({ x: startX, y: startY });
+            visited[startY][startX] = true;
+
+            const directions = [[0, 1], [0, -1], [1, 0], [-1, 0]]; // Down, Up, Right, Left
+
+            while (queue.length > 0) {
+                const { x: currentX, y: currentY } = queue.shift();
+
+                if (currentX === targetX && currentY === targetY) {
+                    // Reconstruct path
+                    const path = [];
+                    let curr = { x: targetX, y: targetY };
+                    while (curr) {
+                        path.unshift(curr);
+                        curr = parent[curr.y][curr.x];
+                    }
+                    return path;
+                }
+
+                for (const dir of directions) {
+                    const nextX = currentX + dir[0];
+                    const nextY = currentY + dir[1];
+
+                    if (nextY >= 0 && nextY < GRID_HEIGHT && nextX >= 0 && nextX < GRID_WIDTH && grid[nextY][nextX] !== 0 && !visited[nextY][nextX]) {
+                        visited[nextY][nextX] = true;
+                        parent[nextY][nextX] = { x: currentX, y: currentY };
+                        queue.push({ x: nextX, y: nextY });
+                    }
+                }
+            }
+            return null; // No path found
+        }
+
+        const blinkyTarget = (pacman) => ({ x: pacman.x, y: pacman.y });
+        const pinkyTarget = (pacman) => ({ x: pacman.x + pacman.dx * 4 * TILE_SIZE, y: pacman.y + pacman.dy * 4 * TILE_SIZE });
+        const inkyTarget = (pacman, inky, maze, TILE_SIZE) => {
+            const blinky = ghosts.find(g => g.color === 'red');
+            if (!blinky) return { x: pacman.x, y: pacman.y };
+
+            const targetX = pacman.x + pacman.dx * 2 * TILE_SIZE;
+            const targetY = pacman.y + pacman.dy * 2 * TILE_SIZE;
+
+            const vectorX = targetX - blinky.x;
+            const vectorY = targetY - blinky.y;
+
+            return { x: blinky.x + 2 * vectorX, y: blinky.y + 2 * vectorY };
+        };
+        const clydeTarget = (pacman, clyde) => {
+            const distance = Math.sqrt(Math.pow(pacman.x - clyde.x, 2) + Math.pow(pacman.y - clyde.y, 2));
+            if (distance > 8 * TILE_SIZE) {
+                return { x: pacman.x, y: pacman.y };
+            } else {
+                return { x: 1 * TILE_SIZE, y: (GRID_HEIGHT - 2) * TILE_SIZE };
+            }
+        };
+
+        let ghosts = [
+            new Ghost(0, 0, 'red', blinkyTarget),
+            new Ghost(0, 0, 'pink', pinkyTarget),
+            new Ghost(0, 0, 'cyan', inkyTarget),
+            new Ghost(0, 0, 'orange', clydeTarget)
+        ];
+
+        let pellets = 0;
+
+        // Modal functions
+        function showModal(message, buttonText, callback) {
+            modalMessage.textContent = message;
+            modalButton.textContent = buttonText;
+            modalButton.onclick = () => {
+                gameModal.classList.remove("visible");
+                if (callback) callback();
+            };
+            gameModal.classList.add("visible");
+        }
+
+        function generateMaze() {
+            // Initialize maze with all walls
+            for (let r = 0; r < GRID_HEIGHT; r++) {
+                maze[r] = [];
+                for (let c = 0; c < GRID_WIDTH; c++) {
+                    maze[r][c] = 0; // All walls initially
+                }
+            }
+
+            const visited = Array(GRID_HEIGHT).fill(0).map(() => Array(GRID_WIDTH).fill(false));
+            const stack = [];
+
+            // Start from a random cell (ensure it's an odd coordinate for pathing)
+            let startX = Math.floor(Math.random() * (GRID_WIDTH / 2)) * 2 + 1;
+            let startY = Math.floor(Math.random() * (GRID_HEIGHT / 2)) * 2 + 1;
+
+            stack.push({ x: startX, y: startY });
+            visited[startY][startX] = true;
+            maze[startY][startX] = 1; // Mark as path
+
+            while (stack.length > 0) {
+                const { x: currentX, y: currentY } = stack[stack.length - 1];
+
+                const neighbors = [];
+                // Check unvisited neighbors (2 steps away, to create paths)
+                // Ensure neighbors are within bounds and are odd coordinates
+                if (currentY - 2 >= 0 && !visited[currentY - 2][currentX]) neighbors.push({ x: currentX, y: currentY - 2, wallX: currentX, wallY: currentY - 1 });
+                if (currentY + 2 < GRID_HEIGHT && !visited[currentY + 2][currentX]) neighbors.push({ x: currentX, y: currentY + 2, wallX: currentX, wallY: currentY + 1 });
+                if (currentX - 2 >= 0 && !visited[currentY][currentX - 2]) neighbors.push({ x: currentX - 2, y: currentY, wallX: currentX - 1, wallY: currentY });
+                if (currentX + 2 < GRID_WIDTH && !visited[currentY][currentX + 2]) neighbors.push({ x: currentX + 2, y: currentY, wallX: currentX + 1, wallY: currentY });
+
+                if (neighbors.length > 0) {
+                    const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+                    maze[next.wallY][next.wallX] = 1; // Carve path through wall
+                    maze[next.y][next.x] = 1; // Mark new cell as path
+                    visited[next.y][next.x] = true;
+                    stack.push({ x: next.x, y: next.y });
+                } else {
+                    stack.pop(); // Backtrack
+                }
+            }
+
+            // Place pellets and power pellets
+            pellets = 0;
+            for (let r = 0; r < GRID_HEIGHT; r++) {
+                for (let c = 0; c < GRID_WIDTH; c++) {
+                    if (maze[r][c] === 1) {
+                        maze[r][c] = 2; // Place pellet
+                        pellets++;
+                    }
+                }
+            }
+
+            // Place power pellets at corners (or near corners if maze doesn't allow exact corners)
+            const powerPelletPositions = [
+                { r: 1, c: 1 },
+                { r: 1, c: GRID_WIDTH - 2 },
+                { r: GRID_HEIGHT - 2, c: 1 },
+                { r: GRID_HEIGHT - 2, c: GRID_WIDTH - 2 }
+            ];
+
+            powerPelletPositions.forEach(pos => {
+                if (maze[pos.r] && maze[pos.r][pos.c] === 2) { // If it's a path with a pellet
+                    maze[pos.r][pos.c] = 3; // Change to power pellet
+                    pellets--; // Power pellets replace regular pellets
+                }
+            });
+
+            // Set Pacman and Ghost initial positions on valid path tiles
+            // Find a suitable starting position for Pacman (e.g., top-left path)
+            let pacmanSpawned = false;
+            for (let r = 1; r < GRID_HEIGHT; r++) {
+                for (let c = 1; c < GRID_WIDTH; c++) {
+                    if (maze[r][c] !== 0) {
+                        pacman.x = c * TILE_SIZE;
+                        pacman.y = r * TILE_SIZE;
+                        pacmanSpawned = true;
+                        break;
+                    }
+                }
+                if (pacmanSpawned) break;
+            }
+
+            // Place ghosts in a central area or near a path
+            const ghostHouseCenterR = Math.floor(GRID_HEIGHT / 2);
+            const ghostHouseCenterC = Math.floor(GRID_WIDTH / 2);
+            let ghostSpawnPoints = [];
+            // Try to find path tiles around the center for ghost spawning
+            for (let r = ghostHouseCenterR - 2; r <= ghostHouseCenterR + 2; r++) {
+                for (let c = ghostHouseCenterC - 2; c <= ghostHouseCenterC + 2; c++) {
+                    if (r >= 0 && r < GRID_HEIGHT && c >= 0 && c < GRID_WIDTH && maze[r][c] !== 0) {
+                        ghostSpawnPoints.push({ r, c });
+                    }
+                }
+            }
+            // If not enough suitable spawn points, pick random path tiles
+            while (ghostSpawnPoints.length < ghosts.length) {
+                const r = Math.floor(Math.random() * GRID_HEIGHT);
+                const c = Math.floor(Math.random() * GRID_WIDTH);
+                if (maze[r][c] !== 0 && !ghostSpawnPoints.some(p => p.r === r && p.c === c)) {
+                    ghostSpawnPoints.push({ r, c });
+                }
+            }
+
+            // Assign ghost positions from spawn points
+            ghosts.forEach((ghost, index) => {
+                ghost.x = ghostSpawnPoints[index].c * TILE_SIZE;
+                ghost.y = ghostSpawnPoints[index].r * TILE_SIZE;
+                ghost.initialX = ghost.x;
+                ghost.initialY = ghost.y;
+            });
+        }
+
+        function drawMaze() {
+            for (let r = 0; r < GRID_HEIGHT; r++) {
+                for (let c = 0; c < GRID_WIDTH; c++) {
+                    const x = c * TILE_SIZE;
+                    const y = r * TILE_SIZE;
+
+                    if (maze[r][c] === 0) { // Wall
+                        ctx.fillStyle = "blue";
+                        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+                    } else if (maze[r][c] === 2) { // Pellet
+                        ctx.fillStyle = "white";
+                        ctx.beginPath();
+                        ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, TILE_SIZE / 8, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (maze[r][c] === 3) { // Power Pellet
+                        ctx.fillStyle = "white";
+                        ctx.beginPath();
+                        ctx.arc(x + TILE_SIZE / 2, y + TILE_SIZE / 2, TILE_SIZE / 4, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+            }
+        }
+
+        function drawPacman() {
+            ctx.beginPath();
+            ctx.arc(
+                pacman.x + pacman.radius,
+                pacman.y + pacman.radius,
+                pacman.radius,
+                pacman.mouthOpen + pacman.angle,
+                Math.PI * 2 - pacman.mouthOpen + pacman.angle
+            );
+            ctx.lineTo(pacman.x + pacman.radius, pacman.y + pacman.radius);
+            ctx.fillStyle = "yellow";
+            ctx.fill();
+            ctx.closePath();
+
+            pacman.mouthOpen += pacman.mouthDirection * 0.05;
+            if (pacman.mouthOpen > 0.4 || pacman.mouthOpen < 0) {
+                pacman.mouthDirection *= -1;
+            }
+        }
+
+        function updatePacman() {
+            const nextX = pacman.x + pacman.dx;
+            const nextY = pacman.y + pacman.dy;
+
+            const nextGridX = Math.floor((nextX + pacman.radius) / TILE_SIZE);
+            const nextGridY = Math.floor((nextY + pacman.radius) / TILE_SIZE);
+
+            if (nextGridY >= 0 && nextGridY < GRID_HEIGHT && nextGridX >= 0 && nextGridX < GRID_WIDTH && maze[nextGridY][nextGridX] === 0) {
+                pacman.dx = 0;
+                pacman.dy = 0;
+            } else {
+                pacman.x = nextX;
+                pacman.y = nextY;
+            }
+
+            const currentGridX = Math.floor((pacman.x + pacman.radius) / TILE_SIZE);
+            const currentGridY = Math.floor((pacman.y + pacman.radius) / TILE_SIZE);
+
+            if (currentGridY >= 0 && currentGridY < GRID_HEIGHT && currentGridX >= 0 && currentGridX < GRID_WIDTH && maze[currentGridY][currentGridX] === 2) {
+                maze[currentGridY][currentGridX] = 1;
+                pellets--;
+                if (pellets === 0) {
+                    showModal("YOU WIN!", "OK", () => document.location.reload());
+                }
+            }
+        }
+
+        document.addEventListener("keydown", (e) => {
+            switch (e.key) {
+                case "ArrowUp":
+                    pacman.dy = -pacman.speed;
+                    pacman.dx = 0;
+                    pacman.angle = -Math.PI / 2;
+                    break;
+                case "ArrowDown":
+                    pacman.dy = pacman.speed;
+                    pacman.dx = 0;
+                    pacman.angle = Math.PI / 2;
+                    break;
+                case "ArrowLeft":
+                    pacman.dx = -pacman.speed;
+                    pacman.dy = 0;
+                    pacman.angle = Math.PI;
+                    break;
+                case "ArrowRight":
+                    pacman.dx = pacman.speed;
+                    pacman.dy = 0;
+                    pacman.angle = 0;
+                    break;
+            }
+        });
+
+        function gameOver() {
+            showModal("GAME OVER!", "OK", () => document.location.reload());
+        }
+
+        function gameLoop() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawMaze();
+            drawPacman();
+            updatePacman();
+            ghosts.forEach(ghost => {
+                ghost.draw();
+                ghost.update();
+            });
+            requestAnimationFrame(gameLoop);
+        }
+
+        generateMaze();
+        gameLoop();
+    </script>
+</body>
+</html>
