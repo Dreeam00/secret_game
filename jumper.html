@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nebula Jumper ∞</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: black;
+      font-family: 'Courier New', monospace;
+    }
+    canvas {
+      display: block;
+    }
+    #modeSelector,
+    #restartBtn {
+      position: absolute;
+      top: 20px;
+      font-size: 16px;
+      padding: 8px 12px;
+      background: #222;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      z-index: 10;
+    }
+    #modeSelector {
+      left: 20px;
+    }
+    #restartBtn {
+      right: 20px;
+      display: none;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+</head>
+<body>
+  <select id="modeSelector">
+    <option value="infinity">∞ モード</option>
+    <option value="lambda">λ モード</option>
+    <option value="therefore">∴ モード</option>
+  </select>
+  <button id="restartBtn">Restart</button>
+
+  <script>
+    // グローバル変数
+    let player, obstacles, particles, portals, items;
+    let score, gravity, jumpForce, bgColor;
+    let mode = "infinity", gameOver = false;
+    let itemMessage = "", itemMessageTimer = 0;
+
+    // UI イベント
+    document.getElementById("modeSelector")
+      .addEventListener("change", e => mode = e.target.value);
+
+    document.getElementById("restartBtn")
+      .addEventListener("click", () => {
+        resetGame();
+        document.getElementById("restartBtn").style.display = "none";
+      });
+
+    function resetGame() {
+      score = 0;
+      gravity = 0.6;
+      jumpForce = -12;
+      gameOver = false;
+      itemMessage = "";
+      itemMessageTimer = 0;
+
+      obstacles = [];
+      particles = [];
+      portals   = [];
+      items     = [];
+      player    = new Player();
+      bgColor   = color(10, 10, 30);
+      loop();
+    }
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      resetGame();
+    }
+
+    function draw() {
+      // 背景 & スコア
+      background(bgColor);
+      fill(255);
+      textSize(24);
+      text("Score: " + floor(score), 20, 40);
+      score += 0.1;
+
+      // 詩的メッセージ
+      poeticMessage(score);
+
+      // アイテム取得メッセージ
+      if (itemMessageTimer > 0) {
+        fill(255, 255, 200);
+        textSize(18);
+        textAlign(CENTER);
+        text(itemMessage, width/2, height/2 + 100);
+        itemMessageTimer--;
+      }
+
+      // プレイヤー更新・表示
+      player.update();
+      player.show();
+
+      // 星屑パーティクル
+      for (let p of particles) {
+        p.update();
+        p.show();
+      }
+      particles = particles.filter(p => !p.finished());
+
+      // 障害物生成
+      if (frameCount % 90 === 0) obstacles.push(new Obstacle());
+      // ポータル生成
+      if (frameCount % 300 === 0) portals.push(new Portal());
+      // アイテム生成
+      if (frameCount % 600 === 0) items.push(new Item());
+
+      // 障害物処理
+      for (let obs of obstacles) {
+        obs.update();
+        obs.show();
+        if (!gameOver && obs.hits(player)) {
+          noLoop();
+          gameOver = true;
+          document.getElementById("restartBtn").style.display = "block";
+          fill(255,0,0);
+          textSize(48);
+          textAlign(CENTER);
+          text("Game Over", width/2, height/2);
+        }
+      }
+      obstacles = obstacles.filter(o => !o.offscreen());
+
+      // ポータル処理
+      for (let portal of portals) {
+        portal.update();
+        portal.show();
+        if (portal.hits(player)) {
+          bgColor = portal.color;
+        }
+      }
+      portals = portals.filter(p => !p.offscreen());
+
+      // アイテム処理
+      for (let item of items) {
+        item.update();
+        item.show();
+        if (!gameOver && item.hits(player)) {
+          item.applyEffect();
+          showItemMessage(item.type);
+          item.x = -999;
+        }
+      }
+      items = items.filter(i => !i.offscreen());
+    }
+
+    function keyPressed() {
+      if (!gameOver && (key === ' ' || keyCode === UP_ARROW)) {
+        player.jump();
+        for (let i = 0; i < 10; i++) {
+          particles.push(new Particle(player.x, player.y));
+        }
+        playJumpSound(player.y);
+      }
+    }
+
+    // プレイヤークラス
+    class Player {
+  constructor() {
+    this.r = 50;
+    this.x = 100;
+    this.y = height - this.r;
+    this.vy = 0;
+    this.jumpCount = 0; // ← 追加
+  }
+
+  jump() {
+    if (this.jumpCount < 2) { // ← ダブルジャンプ制限
+      this.vy = jumpForce;
+      this.jumpCount++;
+    }
+  }
+
+  update() {
+    this.y += this.vy;
+    this.vy += gravity;
+    if (this.y >= height - this.r) {
+      this.y = height - this.r;
+      this.jumpCount = 0; // ← 着地時にジャンプ回数リセット
+    }
+  }
+
+  show() {
+    fill(255);
+    textSize(this.r);
+    textAlign(CENTER, CENTER);
+    const sym = mode === "infinity" ? "∞"
+               : mode === "lambda"   ? "λ"
+               :                        "∴";
+    text(sym, this.x, this.y);
+  }
+}
+
+    // 障害物クラス
+    class Obstacle {
+      constructor() {
+        this.r = random(40,80);
+        this.x = width;
+        this.y = height - this.r;
+        this.speed = 6;
+      }
+      update() { this.x -= this.speed; }
+      show() {
+        fill(255,100,100);
+        rect(this.x, this.y, this.r, this.r);
+      }
+      offscreen()   { return this.x < -this.r; }
+      hits(p) {
+        return p.x + p.r/2 > this.x &&
+               p.x - p.r/2 < this.x + this.r &&
+               p.y + p.r/2 > this.y;
+      }
+    }
+
+    // パーティクルクラス
+    class Particle {
+      constructor(x,y) {
+        this.x = x; this.y = y;
+        this.vx = random(-2,2);
+        this.vy = random(-2,-5);
+        this.alpha = 255;
+      }
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha -= 5;
+      }
+      finished() { return this.alpha < 0; }
+      show() {
+        noStroke();
+        fill(255, this.alpha);
+        ellipse(this.x, this.y, 4);
+      }
+    }
+
+    // ポータルクラス
+    class Portal {
+      constructor() {
+        this.x = width;
+        this.y = random(height/2, height-100);
+        this.r = 60;
+        this.speed = 4;
+        this.color = color(random(100,255), random(100,255), random(255));
+      }
+      update() { this.x -= this.speed; }
+      show() {
+        noFill();
+        stroke(this.color);
+        strokeWeight(3);
+        ellipse(this.x, this.y, this.r);
+      }
+      offscreen() { return this.x < -this.r; }
+      hits(p) {
+        return dist(this.x, this.y, p.x, p.y) < this.r/2 + p.r/2;
+      }
+    }
+
+    // アイテムクラス
+    class Item {
+      constructor() {
+        this.x = width;
+        this.y = random(height/2, height-100);
+        this.r = 30;
+        this.speed = 4;
+        this.type = random(['crystal','orb','feather','seed']);
+      }
+      update() { this.x -= this.speed; }
+      show() {
+        textSize(24);
+        textAlign(CENTER, CENTER);
+        const sym = this.type==='crystal'? '💎'
+                  : this.type==='orb'?     '🧠'
+                  : this.type==='feather'? '🪶'
+                  :                         '🌱';
+        text(sym, this.x, this.y);
+      }
+      offscreen() { return this.x < -this.r; }
+      hits(p) {
+        return dist(this.x, this.y, p.x, p.y) < this.r;
+      }
+      applyEffect() {
+        if (this.type==='crystal') jumpForce -= 2;
+        if (this.type==='orb')     score += 50;
+        if (this.type==='feather') gravity *= 0.8;
+        if (this.type==='seed')    player.r *= 0.8;
+      }
+    }
+
+    // 詩的メッセージ表示
+    function poeticMessage(s) {
+      const lines = {
+        infinity: [
+          "∞"
+        ],
+        lambda: [
+          "λ"
+        ],
+        therefore: [
+          "∴"
+        ]
+      };
+      let list = lines[mode];
+      let idx  = floor(s/100) % list.length;
+      fill(200,255,255);
+      textSize(18);
+      textAlign(CENTER);
+      text(list[idx], width/2, 80);
+    }
+
+    // アイテム取得メッセージ
+    function showItemMessage(type) {
+      const msgs = {
+        crystal: "跳躍力が高まった。",
+        orb:     "加速していく。",
+        feather: "軽くなった。",
+        seed:    "芽がしなやかになる"
+      };
+      itemMessage = msgs[type];
+      itemMessageTimer = 120; // フレーム数
+    }
+
+    // ジャンプ音
+    function playJumpSound(h) {
+      let freq = map(h, 0, height, 200, 800);
+      let osc  = new p5.Oscillator('sine');
+      osc.freq(freq);
+      osc.amp(0.2, 0.05);
+      osc.start();
+      osc.stop(0.2);
+    }
+  </script>
+</body>
+</html>
